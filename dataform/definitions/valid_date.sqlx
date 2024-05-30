@@ -1,0 +1,6 @@
+config {
+    type: "assertion"
+}
+
+SELECT * FROM ${ref("process_docs")} WHERE event_date IS NULL
+

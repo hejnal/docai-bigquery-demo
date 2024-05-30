@@ -1,0 +1,53 @@
+-- This is an example SQLX file to help you learn the basics of Dataform.
+-- Visit https://cloud.google.com/dataform/docs/sql-workflows for more information on how to configure your SQL workflow.
+
+-- You can delete this file, then commit and push your changes to your repository when you are ready.
+
+-- Config blocks allow you to configure, document, and test your data assets.
+config {
+  type: "table", // Creates a view in BigQuery. Try changing to "table" instead.
+}
+
+-- The rest of a SQLX file contains your SELECT statement used to create the table.
+
+
+WITH
+  raw_data AS (
+  SELECT
+    JSON_EXTRACT_SCALAR(ml_process_document_result, '$.entities[0].properties[0].mentionText') AS first_party_lastname,
+    JSON_EXTRACT_SCALAR(ml_process_document_result, '$.entities[0].properties[1].mentionText') AS first_party_name,
+    JSON_EXTRACT_SCALAR(ml_process_document_result, '$.entities[0].properties[2].mentionText') AS event_month,
+    JSON_EXTRACT_SCALAR(ml_process_document_result, '$.entities[0].properties[3].mentionText') AS event_year,
+  FROM
+    ML.PROCESS_DOCUMENT( MODEL `<usecase_id>_raw.<usecase_id>_parser`,
+      TABLE `<project_id>.<usecase_id>_raw.input_objects`)
+  WHERE
+    content_type = 'image/jpeg'),
+parsed_date AS (SELECT
+  PARSE_DATE('%d/%m/%Y', ml_generate_text_llm_result) AS event_date,
+  event_month,
+  event_year
+FROM
+  ML.GENERATE_TEXT(
+    MODEL `<usecase_id>_raw.llm_model`,
+    (
+  SELECT
+        FORMAT('I need to parse a string that represents a date where month is in Spanish, to a date format mm/dd/yyyy which is a UK locale. I only need a transformed string, not a source code. Examples: input: 01 SEPTIEMBRE 2020 output: 01/09/2020 input: 02 MARZO 2020 output: 02/03/2020 input: 12 NOVIEMBRE 2010 output: 12 NOVIEMBRE 2010 input: %s Output: ', CONCAT("01", " ", event_month, " ", event_year))
+        AS prompt,
+        event_month,
+        event_year
+        FROM raw_data
+    ),
+    STRUCT(
+      0.1 AS temperature,
+      100 AS max_output_tokens,
+      TRUE AS flatten_json_output)))
+SELECT
+  REGEXP_REPLACE(INITCAP(first_party_name) , r'\.', '') AS first_party_name,
+  REGEXP_REPLACE(INITCAP(first_party_lastname) , r'\.', '') AS first_party_lastname,
+  event_month,
+  event_year,
+  parsed_date.event_date
+FROM 
+  raw_data
+JOIN parsed_date USING(event_month, event_year)

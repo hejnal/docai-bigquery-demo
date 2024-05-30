@@ -1,0 +1,6 @@
+config {
+    type: "view",
+    dependencies: ["valid_date"]
+}
+
+SELECT * FROM ${ref("process_docs")}

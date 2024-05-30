@@ -1,0 +1,1 @@
+Setup the workflows with the main.yaml and set the trigger to EventArc - for new files arriving to the bucket.

@@ -1,0 +1,5 @@
+defaultProject: <project_id>
+defaultLocation: EU
+defaultDataset: doc_ai_results
+defaultAssertionDataset: dataform_assertions
+dataformCoreVersion: 3.0.0-beta.4

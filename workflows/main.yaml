@@ -1,0 +1,61 @@
+main:
+  params: [args]
+  steps:
+  - init:
+      assign:
+      - repository: projects/<project_id>/locations/europe-west3/repositories/process_documents
+      - wait_for_dataform_status_check: ${default(map.get(args, "wait_for_dataform_status_check"), true)}
+      - dataform_api_version: v1beta1
+  - createCompilationResult:
+      call: http.post
+      args:
+        url: ${"https://dataform.googleapis.com/v1beta1/" + repository + "/compilationResults"}
+        auth:
+          type: OAuth2
+        body:
+          gitCommitish: main
+          codeCompilationConfig:
+            defaultDatabase: <project_id>
+            defaultLocation: EU
+      result: compilationResult
+  - createWorkflowInvocation:
+      call: http.post
+      args:
+        url: ${"https://dataform.googleapis.com/v1beta1/" + repository + "/workflowInvocations"}
+        auth:
+          type: OAuth2
+        headers:
+          User-Agent: "cloud-solutions/process_documents"
+        body:
+          compilationResult: ${compilationResult.body.name}
+          invocationConfig:
+            transitiveDependenciesIncluded: true
+      result: workflowInvocation
+  - getInvocationResult:
+      call: http.get
+      args:
+          url:  ${"https://dataform.googleapis.com/" + dataform_api_version + "/" + workflowInvocation.body.name}
+          auth:
+              type: OAuth2
+      result: invocationResult
+  - earlyStopBeforeDataformStatusCheck:
+      switch:
+          - condition: ${not wait_for_dataform_status_check}
+            return: ${"Dataform workflow invocation successfully created :" + " " + workflowInvocation.body.name}
+  - waitForResult:
+      call: sys.sleep
+      args:
+          seconds: 10
+      next: checkInvocationResult
+  - checkInvocationResult:
+      switch:
+          - condition: ${invocationResult.body.state == "RUNNING"}
+            next: getInvocationResult
+          - condition: ${invocationResult.body.state == "SUCCEEDED"}
+            return: ${"Dataform workflow invocation finished with status 'succeeded' :" + " " +  invocationResult.body.name}
+          - condition: ${invocationResult.body.state == "CANCELLED" or invocationResult.body.state == "FAILED" or invocationResult.body.state == "CANCELING"}
+            steps:
+              - raiseException:
+                  raise: ${"Error while running Dataform workflow :" + " " +  invocationResult.body.name + " " + invocationResult.body.state}
+  - complete:
+      return: ${workflowInvocation.body.name}
